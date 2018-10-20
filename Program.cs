@@ -31,7 +31,7 @@ namespace TikTok
 
                     var Key = HexStrToB(Console.ReadLine());
 
-                    if (Hash(Key).SequenceEqual(KeyHash))
+                    if (!Hash(Key).SequenceEqual(KeyHash))
                         throw new ArgumentException("Invalid key!");
 
                     ProdFile.Position += 0x3890;
