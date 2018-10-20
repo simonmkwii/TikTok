@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Numerics;
@@ -8,12 +8,17 @@ namespace TikTok
 {
     internal class Program
     {
+        public static readonly byte[] KeyHash =
+        {
+            0x46, 0xCC, 0xCF, 0x28, 0x82, 0x86, 0xE3, 0x1C,
+            0x93, 0x13, 0x79, 0xDE, 0x9E, 0xFA, 0x28, 0x8C,
+            0x95, 0xC9, 0xA1, 0x5E, 0x40, 0xB0, 0x0A, 0x4C,
+            0x56, 0x3A, 0x8B, 0xE2, 0x44, 0xEC, 0xE5, 0x15
+        };
+
         private static void Main(string[] args)
         {
-            if (args.Length < 1)
-            {
-                Console.WriteLine($"Usage: TikTok.exe [-setup PRODINFO.bin] ticket.bin");
-            }
+            if (args.Length < 1) Console.WriteLine($"Usage: TikTok.exe [-setup PRODINFO.bin] ticket.bin");
             else
             {
                 RSAParameters Params;
@@ -26,14 +31,12 @@ namespace TikTok
 
                     var Key = HexStrToB(Console.ReadLine());
 
-                    if (!Hex(new SHA256CryptoServiceProvider().ComputeHash(Key)).Equals("46cccf288286e31c931379de9efa288c95c9a15e40b00a4c563a8be244ece515"))
-                    {
+                    if (Hash(Key).SequenceEqual(KeyHash))
                         throw new ArgumentException("Invalid key!");
-                    }
 
                     ProdFile.Position += 0x3890;
 
-                    byte[] DecryptedData = AES_CTR(Key, ProdInfo.ReadBytes(0x10), ProdInfo.ReadBytes(0x230));
+                    byte[] DecryptedData = Ctr(Key, ProdInfo.ReadBytes(0x10), ProdInfo.ReadBytes(0x230));
 
                     ProdInfo.Close();
                     ProdFile.Close();
@@ -76,11 +79,6 @@ namespace TikTok
 
                 var F = File.ReadAllBytes(args[0]);
 
-                string Hex(byte[] In)
-                {
-                    return BitConverter.ToString(In).Replace("-", "").ToLower();
-                }
-
                 var Output = File.OpenWrite("title.keys");
                 var Writer = new StreamWriter(Output);
 
@@ -91,44 +89,27 @@ namespace TikTok
                 {
                     try
                     {
-                        var Dec = Decrypt_RSA_OAEP_SHA256(F.Skip((i * 0x400) + 0x180).Take(0x100).ToArray(), RSA);
+                        var Dec = DecryptRsa(F.Skip((i * 0x400) + 0x180).Take(0x100).ToArray(), RSA);
                         var ID = F.Skip((i * 0x400) + 0x2A0);
-                        Console.WriteLine($"Ticket {i}:");
-                        Console.WriteLine($"    Rights ID:  {Hex(ID.Take(0x10).ToArray())}");
-                        Console.WriteLine($"    Title ID:   {Hex(ID.Take(0x8).ToArray())}");
-                        Console.WriteLine($"    Titlekey:   {Hex(Dec)}");
+                        Console.WriteLine($"\nTicket {i}:\n    Rights ID: {Hex(ID.Take(0x10).ToArray())}\n    Title ID:  {Hex(ID.Take(0x8).ToArray())}\n    Titlekey:  {Hex(Dec)}");
                         Writer.WriteLine($"{Hex(ID.Take(0x10).ToArray())} = {Hex(Dec)}");
                     }
-                    catch (Exception)
-                    {
-                    }
+                    catch { }
                 }
                 Writer.Close();
                 Output.Close();
-                Console.WriteLine("Done!");
+                Console.WriteLine("\a\nDone!");
             }
         }
 
-        static byte[] AES_CTR(byte[] Key, byte[] CTR, byte[] Data)
-        {
-            var AESCTR = new Aes128CounterMode(CTR);
-            ICryptoTransform Transform;
-            Transform = AESCTR.CreateDecryptor(Key, null);
-            return Transform.TransformFinalBlock(Data, 0, Data.Length);
-        }
+        private static byte[] Ctr(byte[] Key, byte[] CTR, byte[] Data) => new Aes128CounterMode(CTR).CreateDecryptor(Key, null).TransformFinalBlock(Data, 0, Data.Length);
 
-        static byte[] Decrypt_RSA_OAEP_SHA256(byte[] Input, RSACng RSA)
-        {
-            var SHA256Padding = RSAEncryptionPadding.CreateOaep(HashAlgorithmName.SHA256);
-            return RSA.Decrypt(Input, SHA256Padding);
-        }
+        private static byte[] Hash(byte[] In) => new SHA256CryptoServiceProvider().ComputeHash(In);
 
-        public static byte[] HexStrToB(string Hex)
-        {
-            return Enumerable.Range(0, Hex.Length)
-                             .Where(x => x % 2 == 0)
-                             .Select(x => Convert.ToByte(Hex.Substring(x, 2), 16))
-                             .ToArray();
-        }
+        private static byte[] DecryptRsa(byte[] Input, RSACng RSA) => RSA.Decrypt(Input, RSAEncryptionPadding.CreateOaep(HashAlgorithmName.SHA256));
+
+        private static byte[] HexStrToB(string Hex) => Enumerable.Range(0, Hex.Length).Where(x => x % 2 == 0).Select(x => Convert.ToByte(Hex.Substring(x, 2), 16)).ToArray();
+
+        private static string Hex(byte[] In) => BitConverter.ToString(In).Replace("-", "").ToLower();
     }
 }
